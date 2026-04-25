@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>RabX — Чат с админом</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: sans-serif; max-width: 500px; margin: auto; padding: 20px; }
+        input, button { width: 100%; padding: 10px; margin: 5px 0; }
+        button { background: #007aff; color: white; border: none; border-radius: 8px; }
+        .post { background: #f0f0f0; margin: 15px 0; padding: 15px; border-radius: 10px; }
+        .chat-area { margin-top: 10px; border-top: 1px solid #ccc; padding-top: 10px; }
+        .message { background: white; margin: 5px; padding: 8px; border-radius: 8px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div id="auth">
+    <h2>Вход</h2>
+    <input type="email" id="email" placeholder="Email">
+    <input type="password" id="password" placeholder="Пароль">
+    <button onclick="login()">Войти</button>
+    <button onclick="showRegister()">Зарегистрироваться</button>
+    <div id="registerDiv" class="hidden">
+        <input type="text" id="regName" placeholder="Имя">
+        <input type="email" id="regEmail" placeholder="Email">
+        <input type="password" id="regPass" placeholder="Пароль">
+        <button onclick="register()">Создать</button>
+    </div>
+</div>
+
+<div id="app" class="hidden">
+    <h2>Лента</h2>
+    <div id="adminZone" class="hidden">
+        <h3>Новый пост</h3>
+        <input type="text" id="title" placeholder="Заголовок">
+        <textarea id="content" rows="2" placeholder="Текст"></textarea>
+        <button onclick="createPost()">Опубликовать</button>
+        <hr>
+    </div>
+    <div id="feed"></div>
+    <button onclick="logout()">Выйти</button>
+</div>
+
+<script>
+    // === ТВОИ ДАННЫЕ — ПРОВЕРЬ ЭТИ ДВЕ СТРОКИ ===
+    const SUPABASE_URL = "https://hhsfvusutmporuqitzmb.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_vVKvxUmrOGOijAeOIz8cdA_mfahX8uu";
+    // ==========================================
+    
+    const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let currentUser = null;
+    let isAdmin = false;
+
+    async function login() {
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        console.log("Пытаюсь войти:", email);
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+        if(error) {
+            alert("Ошибка: " + error.message);
+            console.error(error);
+            return;
+        }
+        console.log("Успех!", data);
+        currentUser = data.user;
+        isAdmin = (email === "timofei.mak100@gmail.com");
+        showApp();
+    }
+
+    async function register() {
+        const name = document.getElementById('regName').value;
+        const email = document.getElementById('regEmail').value;
+        const pass = document.getElementById('regPass').value;
+        const { error } = await supabase.auth.signUp({ email, password: pass, options: { data: { username: name } } });
+        if(error) alert("Ошибка: " + error.message);
+        else alert("Регистрация успешна! Теперь войдите.");
+    }
+
+    function showRegister() {
+        document.getElementById('registerDiv').classList.toggle('hidden');
+    }
+
+    function showApp() {
+        document.getElementById('auth').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        if(isAdmin) document.getElementById('adminZone').classList.remove('hidden');
+        loadPosts();
+    }
+
+    async function loadPosts() {
+        const { data, error } = await supabase.from('posts').select('*').order('created_at', { ascending: false });
+        if(error) { console.error(error); return; }
+        const feed = document.getElementById('feed');
+        feed.innerHTML = '';
+        for(let post of data) {
+            feed.innerHTML += `
+                <div class="post">
+                    <b>${post.title || 'Без названия'}</b>
+                    <p>${post.content || ''}</p>
+                    <div class="chat-area">
+                        <button onclick="toggleChat('${post.id}')">💬 Приватный чат</button>
+                        <div id="chat-${post.id}" class="hidden" style="margin-top:10px;">
+                            <div id="msgs-${post.id}"></div>
+                            <input type="text" id="input-${post.id}" placeholder="Написать админу...">
+                            <button onclick="sendMsg('${post.id}')">Отправить</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    async function createPost() {
+        const title = document.getElementById('title').value;
+        const content = document.getElementById('content').value;
+        const { error } = await supabase.from('posts').insert([{ title, content, user_id: currentUser.id }]);
+        if(error) alert("Ошибка: " + error.message);
+        else { alert("Пост создан!"); loadPosts(); }
+    }
+
+    async function logout() { await supabase.auth.signOut(); location.reload(); }
+
+    window.toggleChat = (id) => document.getElementById(`chat-${id}`).classList.toggle('hidden');
+    window.sendMsg = async (postId) => {
+        const text = document.getElementById(`input-${postId}`).value;
+        if(!text) return;
+        const { data: post } = await supabase.from('posts').select('user_id').eq('id', postId).single();
+        await supabase.from('messages').insert({ post_id: postId, text, sender_id: currentUser.id, receiver_id: post.user_id });
+        document.getElementById(`input-${postId}`).value = '';
+        alert("Отправлено!");
+    };
+</script>
+</body>
+</html>
